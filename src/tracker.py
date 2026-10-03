@@ -78,14 +78,10 @@ class ConstructionTracker:
         self.worker_tracks.clear()
         self._provisional_id_counter = 9000
 
-        # Reset predictor trackers in Ultralytics model if initialized
+        # Reset predictor in Ultralytics model so ByteTrack re-initializes cleanly
         model = self.detector.model
-        if hasattr(model, "predictor") and model.predictor is not None:
-            if hasattr(model.predictor, "trackers") and model.predictor.trackers:
-                for t in model.predictor.trackers:
-                    if hasattr(t, "reset"):
-                        t.reset()
-                model.predictor.trackers = []
+        if hasattr(model, "predictor"):
+            model.predictor = None
 
     def track_frame(
         self,

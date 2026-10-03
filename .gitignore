@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Temporary processing artifacts
+temp/
+*.tmp
+
+# ByteTrack checkpoint and runs
+runs/
+.cache/
