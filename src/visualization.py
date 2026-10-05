@@ -22,17 +22,28 @@ from src.tracker import TrackedDetection
 
 # Color palette for classes (BGR format for OpenCV)
 CLASS_COLORS_BGR = {
-    "worker": (0, 215, 255),       # Safety Gold / Yellow
-    "person": (0, 215, 255),       # Safety Gold / Yellow
-    "helmet": (50, 205, 50),       # Lime Green
-    "hardhat": (50, 205, 50),      # Lime Green
-    "vest": (0, 255, 127),         # Spring Green
-    "safety-vest": (0, 255, 127),
-    "machinery": (0, 140, 255),    # Vibrant Orange
+    "no_helmet": (0, 0, 245),       # Bright Red (Safety Violation)
+    "no-helmet": (0, 0, 245),
+    "no_gloves": (0, 50, 230),      # Crimson Red
+    "no-gloves": (0, 50, 230),
+    "no_goggle": (0, 80, 220),      # Dark Orange-Red
+    "no-goggle": (0, 80, 220),
+    "no_boots": (0, 100, 210),      # Warm Amber-Red
+    "no-boots": (0, 100, 210),
+    "helmet": (50, 205, 50),        # Lime Green (Compliant PPE)
+    "hardhat": (50, 205, 50),
+    "vest": (0, 230, 115),          # Bright Emerald Green
+    "safety-vest": (0, 230, 115),
+    "gloves": (255, 215, 0),        # Gold / Yellow-Green
+    "boots": (220, 180, 50),        # Warm Amber
+    "goggles": (240, 150, 50),      # Cyan-Orange
+    "worker": (0, 215, 255),        # Safety Gold / Yellow
+    "person": (0, 215, 255),        # Safety Gold / Yellow
+    "machinery": (0, 140, 255),     # Vibrant Orange
     "truck": (0, 140, 255),
     "excavator": (0, 140, 255),
 }
-DEFAULT_COLOR_BGR = (255, 165, 0)   # Cyan / Light Blue
+DEFAULT_COLOR_BGR = (255, 165, 0)   # Light Blue / Cyan
 
 
 def get_color_for_class(class_name: str) -> tuple:

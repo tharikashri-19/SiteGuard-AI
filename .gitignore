@@ -10,3 +10,22 @@ temp/
 # ByteTrack checkpoint and runs
 runs/
 .cache/
+
+# Dataset
+dataset/
+data/
+construction-ppe/*
+!construction-ppe/data.yaml
+construction-ppe.zip
+*.zip
+
+# Dataset images
+*.jpg
+*.jpeg
+*.png
+
+# YOLO training outputs
+runs/
+
+# Large model files
+*.pt

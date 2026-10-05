@@ -233,6 +233,122 @@ outputs/detections.csv   ───►   1. Spatial Proximity Matrix           �
 
 ---
 
+---
+
+## VERSION 1 — CUSTOM PPE MODEL TRAINING
+
+This section documents the end-to-end custom training and fine-tuning pipeline for Construction PPE and Helmet detection.
+
+> **Crucial Training Clarification:**  
+> **The model is not simply a pretrained helmet detector. YOLOv8n (`yolov8n.pt`) is used as the pretrained starting point and is fine-tuned on the provided Construction-PPE dataset to create the custom PPE model.**  
+> Pretrained COCO weights are transferred to initialize the feature backbone, and the detection head is completely adapted and trained on the 11 Construction-PPE domain classes.
+
+```text
+       yolov8n.pt (Pretrained Backbone)
+                    ↓
+   Construction-PPE Dataset (1,416 Images)
+                    ↓
+  Fine-Tuning Execution (src/train_ppe.py)
+                    ↓
+     Validation & Metrics Evaluation
+                    ↓
+   Best Weights: models/ppe_best.pt  (Preserves models/best.pt)
+                    ↓
+    Inference: Single Images & Video Streams
+```
+
+### 1. Dataset Used
+* **Dataset**: Construction-PPE dataset located in `construction-ppe/`.
+* **Dataset Config**: `construction-ppe/data.yaml` defines the root directory and split image locations.
+* **Volume**:
+  * **Train Split**: 1,132 images (1,142 label files)
+  * **Validation Split**: 143 images (143 label files)
+  * **Test Split**: 141 images (141 label files)
+  * **Total**: 1,416 images across all splits.
+
+### 2. Dataset Classes (Automatically Discovered from data.yaml)
+The system dynamically inspects `construction-ppe/data.yaml` and extracts all 11 classes:
+```text
+  [ 0] helmet       - Safety hardhat / helmet
+  [ 1] gloves       - Hand protection
+  [ 2] vest         - High-visibility reflective safety vest
+  [ 3] boots        - Steel-toe construction boots
+  [ 4] goggles      - Eye protection / safety glasses
+  [ 5] none         - Background / neutral object
+  [ 6] Person       - Construction site worker
+  [ 7] no_helmet    - Worker without required head protection (VIOLATION)
+  [ 8] no_goggle    - Worker without eye protection
+  [ 9] no_gloves    - Worker without hand protection
+  [10] no_boots     - Worker without protective footwear
+```
+
+### 3. Dataset Validation (`src/validate_dataset.py`)
+Before training starts, `src/validate_dataset.py` inspects the entire dataset to prevent training corruption:
+* Tests file read integrity on every image.
+* Confirms matching `.txt` YOLO bounding box annotations.
+* Validates normalized coordinates ($0.0 \le x, y, w, h \le 1.0$).
+* Verifies class IDs against the 11 valid classes.
+* **Run validation standalone:**
+  ```bash
+  python src/validate_dataset.py
+  ```
+
+### 4. YOLOv8n Starting Model
+* Checkpoint: `yolov8n.pt`
+* Backbone: CSPDarknet with PAN-FPN feature pyramid.
+* Weights are fine-tuned across the domain-specific labels.
+
+### 5. Training Process (`src/train_ppe.py`)
+* The fine-tuning script is located at `src/train_ppe.py`.
+* Configurable parameters:
+  * `--epochs`: Default `50` (or `25` for quick fine-tuning)
+  * `--batch`: Default `16`
+  * `--imgsz`: Default `640`
+  * `--lr0`: Initial learning rate (Default `0.01`)
+  * `--device`: Auto-detects NVIDIA CUDA GPU (`0`) if available; otherwise falls back to `cpu`.
+* **Run command:**
+  ```bash
+  python src/train_ppe.py --epochs 50 --batch 16 --imgsz 640
+  ```
+
+### 6. Validation
+* During and immediately following training, the best checkpoint is evaluated on the validation split (`construction-ppe/images/val`).
+* Generates validation prediction plots (`val_batch0_pred.jpg`), loss curves (`results.png`), and normalized confusion matrix (`confusion_matrix.png`) in `runs/ppe_training/ppe_experiment/`.
+
+### 7. Evaluation Metrics
+The evaluation script extracts and logs actual validation metrics to `models/ppe_metrics.json`:
+* **Overall Precision ($P$)**
+* **Overall Recall ($R$)**
+* **Overall mAP@50**
+* **Overall mAP@50-95**
+* **Per-Class Breakdown**: Detailed performance for `helmet`, `no_helmet`, `Person`, `vest`, `boots`, `gloves`, etc.
+
+### 8. `models/ppe_best.pt` Output Weights
+* The best-performing model weights are saved to:
+  ```text
+  models/ppe_best.pt
+  ```
+* **Safety Rule**: The existing `models/best.pt` is **not** overwritten. `models/ppe_best.pt` is maintained as a separate checkpoint until verified.
+
+### 9. Testing a New Image in Streamlit
+1. Open Streamlit: `streamlit run app.py`
+2. Navigate to the **"🦺 PPE Model Test (Single Image)"** tab.
+3. Upload any construction site image or pick a sample test image from `construction-ppe/images/test/`.
+4. The system runs inference using `models/ppe_best.pt` and displays:
+   * **Original Image**
+   * **Annotated Image** with color-coded bounding boxes (Green for `helmet`, Red for `no_helmet`, Emerald for `vest`, Yellow for `Person`)
+   * **Detected Classes & Confidence Scores** (e.g., `Helmet 0.94`, `Person 0.97`, `No Helmet 0.88`)
+   * **Detections count per class**.
+
+### 10. Testing a Video with Custom PPE Model
+1. In the Streamlit sidebar under **"Model Selection"**, choose:
+   `Custom PPE Model (models/ppe_best.pt)`
+2. In the **"🎥 Construction Video Monitoring"** tab, upload a construction video or load the demo video.
+3. Click **"🚀 Analyze Video"**.
+4. The system runs frame sampling, YOLO PPE detection, and ByteTrack tracking frame-by-frame using `models/ppe_best.pt`.
+
+---
+
 ## Project Structure
 
 ```text
@@ -240,8 +356,15 @@ f:/ML PROJECT/
 │
 ├── app.py                      # Main Streamlit Dashboard Application
 │
+├── construction-ppe/           # Construction PPE Dataset
+│   ├── data.yaml               # Dataset configuration (11 classes)
+│   ├── images/                 # train/ (1,132), val/ (143), test/ (141)
+│   └── labels/                 # train/, val/, test/ annotations
+│
 ├── models/
-│   └── best.pt                 # YOLO model weights (Custom or Baseline)
+│   ├── best.pt                 # Existing baseline model weights
+│   ├── ppe_best.pt             # Trained Custom Construction-PPE Model
+│   └── ppe_metrics.json        # Actual validation evaluation metrics
 │
 ├── src/
 │   ├── __init__.py             # Module initialization
@@ -249,11 +372,16 @@ f:/ML PROJECT/
 │   ├── detector.py             # YOLO detector wrapper (CUDA/CPU, class inspection)
 │   ├── tracker.py              # ByteTrack multi-object tracker
 │   ├── data_logger.py          # Temporal data logger & statistics computation
-│   └── visualization.py        # Frame annotation, Gantt timeline, & density plots
+│   ├── visualization.py        # Frame annotation, Gantt timeline, & density plots
+│   ├── validate_dataset.py     # Dataset integrity inspector & report generator
+│   └── train_ppe.py            # YOLOv8n fine-tuning & evaluation script
 │
 ├── outputs/
 │   ├── detections.csv          # Structured temporal detection dataset
 │   └── annotated_video.mp4     # Playable H.264 annotated output video
+│
+├── runs/
+│   └── ppe_training/           # Training logs, loss curves, confusion matrix
 │
 ├── sample_data/
 │   ├── construction_site.jpg   # High-resolution construction scene
@@ -261,7 +389,6 @@ f:/ML PROJECT/
 │   └── construction_sample.mp4 # Pre-packaged 6.0s 25 FPS demo video
 │
 ├── temp/                       # Temporary frame & stream storage
-│
 ├── test_pipeline.py            # Automated headless end-to-end integration test
 ├── requirements.txt            # Python dependencies
 └── README.md                   # Project documentation
