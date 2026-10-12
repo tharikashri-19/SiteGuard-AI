@@ -340,40 +340,70 @@ class RiskFeatureExtractor:
 
         # Dynamic Worker-Aware Compliance & Non-Compliance Derivation
         if num_workers > 0:
+            # Determine evaluable workers for PPE inspection:
+            # Distant background figures (e.g. worker height < 180px and < 35% of the primary worker)
+            # do not have enough pixel resolution for reliable visual PPE identification (hardhats would be < 15px).
+            # Penalizing them as "missing helmets / missing vests" generates false safety violations.
+            max_worker_h = max((w[3] - w[1]) for w in dedup_workers)
+            min_evaluable_h = max(100.0, 0.35 * max_worker_h) if max_worker_h > 250.0 else 0.0
+
             # Per-worker spatial PPE matching:
-            # A worker has helmet if a helmet overlaps their head region
-            # A worker has vest if a vest overlaps their torso region
+            # A worker has helmet if a helmet overlaps their head region and is appropriately scaled
+            # A worker has vest if a vest overlaps their torso region and is appropriately scaled
+            evaluable_workers = []
             workers_with_helmet = 0
             workers_with_vest = 0
+
             for w in dedup_workers:
                 w_w = max(1.0, w[2] - w[0])
                 w_h = max(1.0, w[3] - w[1])
+
+                # Check helmet: upper head region, scale <= 45% of worker height
                 has_h = any(
                     (h[0] < w[2] + 0.15*w_w and h[2] > w[0] - 0.15*w_w and 
-                     h[1] < w[1] + 0.50*w_h and h[3] > w[1] - 0.20*w_h)
+                     h[1] < w[1] + 0.50*w_h and h[3] > w[1] - 0.20*w_h and
+                     (h[3] - h[1]) <= 0.45 * w_h)
                     for h in helmet_boxes
                 )
+                # Check vest: torso region, scale <= 80% of worker height
                 has_v = any(
                     (v[0] < w[2] + 0.15*w_w and v[2] > w[0] - 0.15*w_w and 
-                     v[1] < w[1] + 0.85*w_h and v[3] > w[1] + 0.05*w_h)
+                     v[1] < w[1] + 0.85*w_h and v[3] > w[1] + 0.05*w_h and
+                     (v[3] - v[1]) <= 0.80 * w_h)
                     for v in vest_boxes
                 )
-                if has_h: workers_with_helmet += 1
-                if has_v: workers_with_vest += 1
+                # Check explicit violations
+                has_no_h = any(
+                    (nh[0] < w[2] + 0.15*w_w and nh[2] > w[0] - 0.15*w_w and
+                     nh[1] < w[1] + 0.50*w_h and nh[3] > w[1] - 0.20*w_h)
+                    for nh in no_helmet_boxes
+                )
+                has_no_v = any(
+                    (nv[0] < w[2] + 0.15*w_w and nv[2] > w[0] - 0.15*w_w and
+                     nv[1] < w[1] + 0.85*w_h and nv[3] > w[1] + 0.05*w_h)
+                    for nv in no_vest_boxes
+                )
+
+                if w_h >= min_evaluable_h or has_h or has_v or has_no_h or has_no_v:
+                    evaluable_workers.append(w)
+                    if has_h: workers_with_helmet += 1
+                    if has_v: workers_with_vest += 1
+
+            num_eval = len(evaluable_workers) if evaluable_workers else num_workers
 
             # Fallback to direct detection counts if spatial bounding boxes are tight
-            effective_helmets = max(workers_with_helmet, min(num_workers, len(helmet_boxes)))
-            effective_vests = max(workers_with_vest, min(num_workers, len(vest_boxes)))
+            effective_helmets = max(workers_with_helmet, min(num_eval, len(helmet_boxes)))
+            effective_vests = max(workers_with_vest, min(num_eval, len(vest_boxes)))
 
-            helmet_ratio = min(1.0, float(effective_helmets / num_workers))
-            num_no_helmets = max(len(no_helmet_boxes), num_workers - effective_helmets)
+            helmet_ratio = min(1.0, float(effective_helmets / num_eval))
+            num_no_helmets = max(len(no_helmet_boxes), num_eval - effective_helmets)
 
-            vest_ratio = min(1.0, float(effective_vests / num_workers))
-            num_no_vests = max(len(no_vest_boxes), num_workers - effective_vests)
+            vest_ratio = min(1.0, float(effective_vests / num_eval))
+            num_no_vests = max(len(no_vest_boxes), num_eval - effective_vests)
 
             # Gloves compliance: Only penalize if explicit no_gloves detected or if gloves detected evaluate ratio
             if len(glove_boxes) > 0:
-                gloves_ratio = min(1.0, float(len(glove_boxes) / num_workers))
+                gloves_ratio = min(1.0, float(len(glove_boxes) / num_eval))
                 num_no_gloves = len(no_glove_boxes)
             elif len(no_glove_boxes) > 0:
                 gloves_ratio = 0.0
@@ -384,7 +414,7 @@ class RiskFeatureExtractor:
 
             # Boots compliance: Only penalize if explicit no_boots detected
             if len(boot_boxes) > 0:
-                boots_ratio = min(1.0, float(len(boot_boxes) / num_workers))
+                boots_ratio = min(1.0, float(len(boot_boxes) / num_eval))
                 num_no_boots = len(no_boot_boxes)
             elif len(no_boot_boxes) > 0:
                 boots_ratio = 0.0
@@ -395,7 +425,7 @@ class RiskFeatureExtractor:
 
             # Goggles compliance: Only penalize if explicit no_goggles detected
             if len(goggle_boxes) > 0:
-                goggles_ratio = min(1.0, float(len(goggle_boxes) / num_workers))
+                goggles_ratio = min(1.0, float(len(goggle_boxes) / num_eval))
                 num_no_goggles = len(no_goggle_boxes)
             elif len(no_goggle_boxes) > 0:
                 goggles_ratio = 0.0
