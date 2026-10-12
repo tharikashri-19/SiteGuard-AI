@@ -267,15 +267,16 @@ class RiskFeatureExtractor:
         # 1. Parse detected objects
         worker_boxes = []
         num_helmets = 0
-        num_no_helmets = 0
-        num_vests = 0
-        num_no_vests = 0
-        num_gloves = 0
-        num_no_gloves = 0
-        num_boots = 0
-        num_no_boots = 0
-        num_goggles = 0
-        num_no_goggles = 0
+        helmet_boxes = []
+        vest_boxes = []
+        no_helmet_boxes = []
+        no_vest_boxes = []
+        glove_boxes = []
+        no_glove_boxes = []
+        boot_boxes = []
+        no_boot_boxes = []
+        goggle_boxes = []
+        no_goggle_boxes = []
         machinery_boxes = []
 
         for d in detections:
@@ -287,78 +288,132 @@ class RiskFeatureExtractor:
             if "person" in cname or "worker" in cname:
                 worker_boxes.append(box)
             elif "no_helmet" in cname or "no-helmet" in cname:
-                num_no_helmets += 1
+                no_helmet_boxes.append(box)
             elif "helmet" in cname or "hardhat" in cname:
-                num_helmets += 1
+                helmet_boxes.append(box)
             elif "no_vest" in cname or "no-vest" in cname or "no_safety" in cname:
-                num_no_vests += 1
+                no_vest_boxes.append(box)
             elif "vest" in cname or "safety-vest" in cname:
-                num_vests += 1
+                vest_boxes.append(box)
             elif "no_glove" in cname:
-                num_no_gloves += 1
+                no_glove_boxes.append(box)
             elif "glove" in cname:
-                num_gloves += 1
+                glove_boxes.append(box)
             elif "no_boot" in cname:
-                num_no_boots += 1
+                no_boot_boxes.append(box)
             elif "boot" in cname:
-                num_boots += 1
+                boot_boxes.append(box)
             elif "no_goggle" in cname:
-                num_no_goggles += 1
+                no_goggle_boxes.append(box)
             elif "goggle" in cname:
-                num_goggles += 1
+                goggle_boxes.append(box)
             elif any(k in cname for k in ["machinery", "truck", "excavator", "crane", "forklift"]):
                 machinery_boxes.append(box)
 
-        # Worker count: either from object detector or from pose estimator
-        num_workers = max(len(worker_boxes), len(pose_results))
+        # Incorporate pose estimator worker boxes if present
+        if pose_results:
+            for pr in pose_results:
+                if pr.bbox_xyxy:
+                    worker_boxes.append(pr.bbox_xyxy)
+
+        # Non-Maximum Suppression to deduplicate overlapping worker detections
+        def _dedup_worker_boxes(boxes, iou_thresh=0.40):
+            if not boxes: return []
+            keep = []
+            sorted_b = sorted(boxes, key=lambda b: (b[2]-b[0])*(b[3]-b[1]), reverse=True)
+            for b in sorted_b:
+                is_dup = False
+                for k in keep:
+                    xa, ya = max(b[0], k[0]), max(b[1], k[1])
+                    xb, yb = min(b[2], k[2]), min(b[3], k[3])
+                    inter = max(0.0, xb - xa) * max(0.0, yb - ya)
+                    union = (b[2]-b[0])*(b[3]-b[1]) + (k[2]-k[0])*(k[3]-k[1]) - inter
+                    if union > 0 and (inter / union) > iou_thresh:
+                        is_dup = True
+                        break
+                if not is_dup:
+                    keep.append(b)
+            return keep
+
+        dedup_workers = _dedup_worker_boxes(worker_boxes)
+        num_workers = len(dedup_workers)
 
         # Dynamic Worker-Aware Compliance & Non-Compliance Derivation
         if num_workers > 0:
-            # Vest compliance & violation
-            if num_vests == 0:
-                vest_ratio = 0.0
-                num_no_vests = max(num_no_vests, num_workers)
-            else:
-                vest_ratio = min(1.0, float(num_vests / num_workers))
-                num_no_vests = max(num_no_vests, max(0, num_workers - num_vests))
+            # Per-worker spatial PPE matching:
+            # A worker has helmet if a helmet overlaps their head region
+            # A worker has vest if a vest overlaps their torso region
+            workers_with_helmet = 0
+            workers_with_vest = 0
+            for w in dedup_workers:
+                w_w = max(1.0, w[2] - w[0])
+                w_h = max(1.0, w[3] - w[1])
+                has_h = any(
+                    (h[0] < w[2] + 0.15*w_w and h[2] > w[0] - 0.15*w_w and 
+                     h[1] < w[1] + 0.50*w_h and h[3] > w[1] - 0.20*w_h)
+                    for h in helmet_boxes
+                )
+                has_v = any(
+                    (v[0] < w[2] + 0.15*w_w and v[2] > w[0] - 0.15*w_w and 
+                     v[1] < w[1] + 0.85*w_h and v[3] > w[1] + 0.05*w_h)
+                    for v in vest_boxes
+                )
+                if has_h: workers_with_helmet += 1
+                if has_v: workers_with_vest += 1
 
-            # Helmet compliance & violation
-            if num_helmets == 0:
-                helmet_ratio = 0.0
-                num_no_helmets = max(num_no_helmets, num_workers)
-            else:
-                helmet_ratio = min(1.0, float(num_helmets / num_workers))
-                num_no_helmets = max(num_no_helmets, max(0, num_workers - num_helmets))
+            # Fallback to direct detection counts if spatial bounding boxes are tight
+            effective_helmets = max(workers_with_helmet, min(num_workers, len(helmet_boxes)))
+            effective_vests = max(workers_with_vest, min(num_workers, len(vest_boxes)))
 
-            # Gloves compliance & violation
-            if num_gloves == 0:
+            helmet_ratio = min(1.0, float(effective_helmets / num_workers))
+            num_no_helmets = max(len(no_helmet_boxes), num_workers - effective_helmets)
+
+            vest_ratio = min(1.0, float(effective_vests / num_workers))
+            num_no_vests = max(len(no_vest_boxes), num_workers - effective_vests)
+
+            # Gloves compliance: Only penalize if explicit no_gloves detected or if gloves detected evaluate ratio
+            if len(glove_boxes) > 0:
+                gloves_ratio = min(1.0, float(len(glove_boxes) / num_workers))
+                num_no_gloves = len(no_glove_boxes)
+            elif len(no_glove_boxes) > 0:
                 gloves_ratio = 0.0
-                num_no_gloves = max(num_no_gloves, num_workers)
+                num_no_gloves = len(no_glove_boxes)
             else:
-                gloves_ratio = min(1.0, float(num_gloves / num_workers))
-                num_no_gloves = max(num_no_gloves, max(0, num_workers - num_gloves))
+                gloves_ratio = 1.0  # General baseline when gloves not tracked
+                num_no_gloves = 0
 
-            # Boots compliance & violation
-            if num_boots == 0:
+            # Boots compliance: Only penalize if explicit no_boots detected
+            if len(boot_boxes) > 0:
+                boots_ratio = min(1.0, float(len(boot_boxes) / num_workers))
+                num_no_boots = len(no_boot_boxes)
+            elif len(no_boot_boxes) > 0:
                 boots_ratio = 0.0
-                num_no_boots = max(num_no_boots, num_workers)
+                num_no_boots = len(no_boot_boxes)
             else:
-                boots_ratio = min(1.0, float(num_boots / num_workers))
-                num_no_boots = max(num_no_boots, max(0, num_workers - num_boots))
+                boots_ratio = 1.0  # General baseline when boots not tracked
+                num_no_boots = 0
 
-            # Goggles compliance
-            if num_goggles == 0 and num_no_goggles > 0:
+            # Goggles compliance: Only penalize if explicit no_goggles detected
+            if len(goggle_boxes) > 0:
+                goggles_ratio = min(1.0, float(len(goggle_boxes) / num_workers))
+                num_no_goggles = len(no_goggle_boxes)
+            elif len(no_goggle_boxes) > 0:
                 goggles_ratio = 0.0
-            elif num_goggles > 0:
-                goggles_ratio = min(1.0, float(num_goggles / num_workers))
+                num_no_goggles = len(no_goggle_boxes)
             else:
-                goggles_ratio = 0.5  # Neutral indicator when optional on standard tasks
+                goggles_ratio = 1.0
+                num_no_goggles = 0
         else:
             helmet_ratio = -1.0
             vest_ratio = -1.0
             gloves_ratio = -1.0
             boots_ratio = -1.0
             goggles_ratio = -1.0
+            num_no_helmets = 0
+            num_no_vests = 0
+            num_no_gloves = 0
+            num_no_boots = 0
+            num_no_goggles = 0
 
         ppe_violations = num_no_helmets + num_no_vests + num_no_gloves + num_no_boots + num_no_goggles
 

@@ -207,16 +207,33 @@ class XGBoostRiskClassifier:
                 missing_ppe_str = "safety vest" if has_missing_vest else "safety helmet"
                 posture_str = "squatting" if features.get("num_squatting", 0) > 0 else "awkward bending"
                 escalation_reason = f"Worker in hazardous {posture_str} posture without {missing_ppe_str}"
-        elif (has_missing_vest and has_missing_helmet) or total_violations >= 2:
-            # Missing both vital safety items (helmet & vest) or multiple safety violations
+        elif has_missing_vest and has_missing_helmet:
+            # Missing BOTH vital safety items (helmet & vest)
             if pred_category in ["Low", "Medium"]:
                 pred_category = "High"
                 class_probs = {"Low": 0.01, "Medium": 0.05, "High": 0.92, "Critical": 0.02}
-                escalation_reason = f"Severe safety violation: Missing both helmet and safety vest ({total_violations} total PPE violations)"
-        elif total_violations >= 1 and pred_category == "Low":
+                escalation_reason = f"Severe safety violation: Missing both helmet and safety vest"
+        elif has_missing_helmet:
+            # Missing safety helmet
+            if pred_category == "Low":
+                pred_category = "Medium"
+                class_probs = {"Low": 0.05, "Medium": 0.85, "High": 0.08, "Critical": 0.02}
+                escalation_reason = "Safety violation: Worker missing safety helmet"
+        elif has_missing_vest:
+            # Missing high-visibility vest
+            if pred_category == "Low":
+                pred_category = "Medium"
+                class_probs = {"Low": 0.05, "Medium": 0.85, "High": 0.08, "Critical": 0.02}
+                escalation_reason = "Safety violation: Worker missing high-visibility vest"
+        elif total_violations >= 2 and pred_category == "Low":
             pred_category = "Medium"
-            class_probs = {"Low": 0.05, "Medium": 0.85, "High": 0.08, "Critical": 0.02}
-            escalation_reason = f"PPE violation active ({total_violations} missing item)"
+            class_probs = {"Low": 0.08, "Medium": 0.80, "High": 0.10, "Critical": 0.02}
+            escalation_reason = f"Minor PPE non-compliance active ({total_violations} secondary items)"
+        elif not has_missing_vest and not has_missing_helmet and not is_awkward_posture and not is_suspended and not is_fall:
+            # Full PPE compliance (helmets & vests) in safe standing posture: LOW RISK
+            pred_category = "Low"
+            class_probs = {"Low": 0.94, "Medium": 0.05, "High": 0.01, "Critical": 0.00}
+            escalation_reason = None
 
         # Calculate contributing factors using feature importances & active features
         contributions = []

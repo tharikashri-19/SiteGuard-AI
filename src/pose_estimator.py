@@ -501,7 +501,6 @@ class WorkerPoseEstimator:
 
 
 def compute_iou(b1: Tuple[float, float, float, float], b2: Tuple[float, float, float, float]) -> float:
-    """Computes Intersection over Union between two (x1, y1, x2, y2) bounding boxes."""
     xa = max(b1[0], b2[0])
     ya = max(b1[1], b2[1])
     xb = min(b1[2], b2[2])
