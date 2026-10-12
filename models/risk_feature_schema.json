@@ -1,0 +1,205 @@
+{
+  "schema_version": "1.0",
+  "columns": [
+    "workers_detected_count",
+    "helmet_compliance_ratio",
+    "vest_compliance_ratio",
+    "gloves_compliance_ratio",
+    "boots_compliance_ratio",
+    "goggles_compliance_ratio",
+    "no_helmet_count",
+    "no_vest_count",
+    "no_gloves_count",
+    "no_boots_count",
+    "no_goggles_count",
+    "ppe_violations_count",
+    "repeated_violations_count",
+    "num_standing",
+    "num_walking",
+    "num_sitting",
+    "num_squatting",
+    "num_kneeling",
+    "num_bending",
+    "num_lying",
+    "num_possible_fall",
+    "duration_sitting_sec",
+    "duration_squatting_sec",
+    "duration_kneeling_sec",
+    "duration_bending_sec",
+    "persistent_posture_events",
+    "unsafe_zone_overlap",
+    "unsafe_zone_duration_sec",
+    "hazard_proximity_indicator",
+    "num_detected_hazards",
+    "keypoint_conf_mean",
+    "valid_frame_count",
+    "observation_window_sec"
+  ],
+  "descriptions": {
+    "workers_detected_count": {
+      "type": "int",
+      "unit": "count",
+      "description": "Total number of unique worker persons detected in observation window."
+    },
+    "helmet_compliance_ratio": {
+      "type": "float",
+      "unit": "ratio [0.0 - 1.0]",
+      "description": "Proportion of detected workers actively wearing a verified safety helmet. -1.0 if no workers present."
+    },
+    "vest_compliance_ratio": {
+      "type": "float",
+      "unit": "ratio [0.0 - 1.0]",
+      "description": "Proportion of detected workers wearing a verified high-visibility safety vest. -1.0 if no workers present."
+    },
+    "gloves_compliance_ratio": {
+      "type": "float",
+      "unit": "ratio [0.0 - 1.0]",
+      "description": "Proportion of detected workers wearing verified protective gloves. -1.0 if no workers present."
+    },
+    "boots_compliance_ratio": {
+      "type": "float",
+      "unit": "ratio [0.0 - 1.0]",
+      "description": "Proportion of detected workers wearing verified safety boots. -1.0 if no workers present."
+    },
+    "goggles_compliance_ratio": {
+      "type": "float",
+      "unit": "ratio [0.0 - 1.0]",
+      "description": "Proportion of detected workers wearing verified safety goggles/glasses. -1.0 if no workers present."
+    },
+    "no_helmet_count": {
+      "type": "int",
+      "unit": "count",
+      "description": "Detected workers explicitly missing safety helmets."
+    },
+    "no_vest_count": {
+      "type": "int",
+      "unit": "count",
+      "description": "Detected workers explicitly missing high-visibility safety vests."
+    },
+    "no_gloves_count": {
+      "type": "int",
+      "unit": "count",
+      "description": "Detected workers explicitly missing protective gloves."
+    },
+    "no_boots_count": {
+      "type": "int",
+      "unit": "count",
+      "description": "Detected workers explicitly missing safety footwear."
+    },
+    "no_goggles_count": {
+      "type": "int",
+      "unit": "count",
+      "description": "Detected workers explicitly missing safety goggles."
+    },
+    "ppe_violations_count": {
+      "type": "int",
+      "unit": "count",
+      "description": "Total detected PPE violations (missing helmet, vest, gloves, boots, goggles) in the window."
+    },
+    "repeated_violations_count": {
+      "type": "int",
+      "unit": "count",
+      "description": "Number of workers persisting with PPE non-compliance across multiple observation frames."
+    },
+    "num_standing": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of workers in neutral upright standing posture."
+    },
+    "num_walking": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of workers in walking / gait movement."
+    },
+    "num_sitting": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of workers in sitting posture."
+    },
+    "num_squatting": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of workers in squatting posture (knee angle < 115 deg)."
+    },
+    "num_kneeling": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of workers kneeling (knee contact on ground)."
+    },
+    "num_bending": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of workers with significant trunk flexion / stooping (torso angle >= 35 deg)."
+    },
+    "num_lying": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of workers in horizontal / prone / supine position."
+    },
+    "num_possible_fall": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of workers detected with sudden fall motion or prone on ground level."
+    },
+    "duration_sitting_sec": {
+      "type": "float",
+      "unit": "seconds",
+      "description": "Max cumulative seconds spent in sitting posture by any observed worker."
+    },
+    "duration_squatting_sec": {
+      "type": "float",
+      "unit": "seconds",
+      "description": "Max cumulative seconds spent in squatting posture by any observed worker."
+    },
+    "duration_kneeling_sec": {
+      "type": "float",
+      "unit": "seconds",
+      "description": "Max cumulative seconds spent in kneeling posture by any observed worker."
+    },
+    "duration_bending_sec": {
+      "type": "float",
+      "unit": "seconds",
+      "description": "Max cumulative seconds spent in bending / stooping posture."
+    },
+    "persistent_posture_events": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of instances where an awkward posture was held continuously for > 10 seconds."
+    },
+    "unsafe_zone_overlap": {
+      "type": "float",
+      "unit": "ratio [0.0 - 1.0]",
+      "description": "Maximum spatial overlap ratio between worker bounding box and configured hazard/no-go zones."
+    },
+    "unsafe_zone_duration_sec": {
+      "type": "float",
+      "unit": "seconds",
+      "description": "Total duration spent by any worker inside a configured unsafe zone."
+    },
+    "hazard_proximity_indicator": {
+      "type": "int",
+      "unit": "binary [0 or 1]",
+      "description": "1 if a worker is proximate to active machinery or excavator, 0 otherwise."
+    },
+    "num_detected_hazards": {
+      "type": "int",
+      "unit": "count",
+      "description": "Count of heavy machinery, trucks, or excavators detected in the frame."
+    },
+    "keypoint_conf_mean": {
+      "type": "float",
+      "unit": "confidence [0.0 - 1.0]",
+      "description": "Mean body keypoint detection confidence across all detected workers."
+    },
+    "valid_frame_count": {
+      "type": "int",
+      "unit": "frames",
+      "description": "Total valid analyzed frames within the observation window."
+    },
+    "observation_window_sec": {
+      "type": "float",
+      "unit": "seconds",
+      "description": "Temporal span of the observation window."
+    }
+  }
+}

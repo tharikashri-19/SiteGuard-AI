@@ -33,10 +33,11 @@ from ultralytics import YOLO
 # Internal dataset validation import
 from src.validate_dataset import DatasetValidator
 
-DEFAULT_DATA_YAML = "construction-ppe/data.yaml"
-DEFAULT_BASE_MODEL = "yolov8n.pt"
-TARGET_OUTPUT_MODEL = "models/ppe_best.pt"
+DEFAULT_DATA_YAML = "construction-ppe-v2/data.yaml" if os.path.exists("construction-ppe-v2/data.yaml") else "construction-ppe/data.yaml"
+DEFAULT_BASE_MODEL = "models/ppe_best.pt" if os.path.exists("models/ppe_best.pt") else "yolov8n.pt"
+TARGET_OUTPUT_MODEL = "models/ppe_best_v2.pt"
 RUNS_DIR = "runs/ppe_training"
+
 
 
 def resolve_yaml_paths(yaml_path: str) -> str:
@@ -119,7 +120,8 @@ def train_custom_ppe_model(
     os.makedirs(project_dir, exist_ok=True)
     os.makedirs(os.path.dirname(output_model_path), exist_ok=True)
 
-    print(f"\n[Step 4/5] Initiating fine-tuning for {epochs} epochs (imgsz={imgsz}, batch={batch_size})...")
+    exp_name = "ppe_v2_experiment" if "v2" in output_model_path.lower() else "ppe_experiment"
+    print(f"\n[Step 4/5] Initiating fine-tuning for {epochs} epochs (imgsz={imgsz}, batch={batch_size}, experiment='{exp_name}')...")
     train_results = model.train(
         data=resolved_yaml,
         epochs=epochs,
@@ -127,7 +129,7 @@ def train_custom_ppe_model(
         imgsz=imgsz,
         device=chosen_device,
         project=project_dir,
-        name="ppe_experiment",
+        name=exp_name,
         exist_ok=True,
         lr0=lr0,
         verbose=True,
@@ -135,7 +137,8 @@ def train_custom_ppe_model(
     )
 
     # Locate generated best.pt
-    run_save_dir = Path(train_results.save_dir) if hasattr(train_results, "save_dir") else Path(project_dir) / "ppe_experiment"
+    run_save_dir = Path(train_results.save_dir) if hasattr(train_results, "save_dir") else Path(project_dir) / exp_name
+
     trained_best_weights = run_save_dir / "weights" / "best.pt"
 
     if not trained_best_weights.exists():
@@ -200,9 +203,11 @@ def train_custom_ppe_model(
     }
 
     # Save metrics JSON
-    metrics_path = Path("models/ppe_metrics.json")
+    metrics_filename = "ppe_v2_metrics.json" if "v2" in output_model_path.lower() else "ppe_metrics.json"
+    metrics_path = Path("models") / metrics_filename
     with open(metrics_path, "w", encoding="utf-8") as mf:
         json.dump(summary_data, mf, indent=2)
+
 
     # Print Evaluation Table
     print("\n" + "=" * 70)

@@ -99,21 +99,19 @@ def annotate_frame(
             cv2.line(annotated, (x2, y2), (x2, y2 - line_len), color, 4)
 
         if draw_badge:
-            # Multi-line label information
-            line1 = f"{det.class_name}"
-            line2 = f"ID: {det.track_id:02d}"
-            line3 = f"Conf: {det.confidence:.2f}"
+            lines = [f"{det.class_name}"]
+            tid = getattr(det, "track_id", None)
+            if tid is not None:
+                lines.append(f"ID: {tid:02d}")
+            lines.append(f"Conf: {det.confidence:.2f}")
 
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 0.45
             font_thickness = 1
 
-            (w1, h1), _ = cv2.getTextSize(line1, font, font_scale, font_thickness)
-            (w2, h2), _ = cv2.getTextSize(line2, font, font_scale, font_thickness)
-            (w3, h3), _ = cv2.getTextSize(line3, font, font_scale, font_thickness)
-
-            badge_w = max(w1, w2, w3) + 14
-            badge_h = h1 + h2 + h3 + 18
+            line_sizes = [cv2.getTextSize(l, font, font_scale, font_thickness)[0] for l in lines]
+            badge_w = max(w for w, h in line_sizes) + 14
+            badge_h = sum(h for w, h in line_sizes) + (len(lines) + 1) * 4
 
             # Position badge above box, or inside box if too close to ceiling
             badge_y1 = y1 - badge_h if (y1 - badge_h) >= 0 else y1
@@ -128,12 +126,11 @@ def annotate_frame(
             cv2.addWeighted(overlay, 0.85, annotated, 0.15, 0, annotated)
 
             # Draw text lines
-            y_cursor = badge_y1 + h1 + 4
-            cv2.putText(annotated, line1, (badge_x1 + 6, y_cursor), font, font_scale, color, font_thickness, cv2.LINE_AA)
-            y_cursor += h2 + 4
-            cv2.putText(annotated, line2, (badge_x1 + 6, y_cursor), font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
-            y_cursor += h3 + 4
-            cv2.putText(annotated, line3, (badge_x1 + 6, y_cursor), font, font_scale, (200, 200, 200), font_thickness, cv2.LINE_AA)
+            y_cursor = badge_y1 + 4
+            for idx, (line_text, (lw, lh)) in enumerate(zip(lines, line_sizes)):
+                y_cursor += lh + 2
+                text_col = color if idx == 0 else (255, 255, 255)
+                cv2.putText(annotated, line_text, (badge_x1 + 6, y_cursor), font, font_scale, text_col, font_thickness, cv2.LINE_AA)
 
     return annotated
 

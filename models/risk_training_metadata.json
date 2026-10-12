@@ -1,0 +1,127 @@
+{
+  "model_file": "models/risk_xgboost.json",
+  "training_timestamp": "2026-10-12T11:44:52.949349",
+  "mode": "Mode B (Synthetic Demo Workflow)",
+  "is_synthetic_data": true,
+  "warning": "Model was trained on synthetic scenario data solely for workflow verification and demonstration. It must NOT be reported as empirical real-world validation.",
+  "target_classes": [
+    "Low",
+    "Medium",
+    "High",
+    "Critical"
+  ],
+  "label_mapping": {
+    "Low": 0,
+    "Medium": 1,
+    "High": 2,
+    "Critical": 3
+  },
+  "sample_counts": {
+    "total": 2000,
+    "train": 1400,
+    "val": 300,
+    "test": 300
+  },
+  "hyperparameters": {
+    "objective": "multi:softprob",
+    "num_class": 4,
+    "n_estimators": 120,
+    "learning_rate": 0.08,
+    "max_depth": 5,
+    "subsample": 0.85,
+    "colsample_bytree": 0.85,
+    "random_state": 42,
+    "eval_metric": "mlogloss"
+  },
+  "test_metrics": {
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "per_class": {
+      "Low": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 75.0
+      },
+      "Medium": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 83.0
+      },
+      "High": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 82.0
+      },
+      "Critical": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 60.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        75,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        83,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        82,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        60
+      ]
+    ]
+  },
+  "feature_importances": {
+    "duration_bending_sec": 0.20144,
+    "gloves_compliance_ratio": 0.13467,
+    "unsafe_zone_overlap": 0.1288,
+    "goggles_compliance_ratio": 0.12418,
+    "no_vest_count": 0.10028,
+    "vest_compliance_ratio": 0.07332,
+    "no_helmet_count": 0.07302,
+    "helmet_compliance_ratio": 0.04123,
+    "num_lying": 0.0339,
+    "unsafe_zone_duration_sec": 0.02642,
+    "ppe_violations_count": 0.02175,
+    "num_possible_fall": 0.02083,
+    "no_goggles_count": 0.01395,
+    "boots_compliance_ratio": 0.00585,
+    "num_squatting": 0.00031,
+    "num_detected_hazards": 6e-05,
+    "keypoint_conf_mean": 0.0,
+    "workers_detected_count": 0.0,
+    "no_gloves_count": 0.0,
+    "no_boots_count": 0.0,
+    "repeated_violations_count": 0.0,
+    "num_standing": 0.0,
+    "num_walking": 0.0,
+    "num_sitting": 0.0,
+    "num_kneeling": 0.0,
+    "num_bending": 0.0,
+    "duration_sitting_sec": 0.0,
+    "duration_squatting_sec": 0.0,
+    "duration_kneeling_sec": 0.0,
+    "persistent_posture_events": 0.0,
+    "hazard_proximity_indicator": 0.0,
+    "valid_frame_count": 0.0,
+    "observation_window_sec": 0.0
+  }
+}

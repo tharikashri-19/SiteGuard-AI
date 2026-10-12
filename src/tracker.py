@@ -146,6 +146,28 @@ class ConstructionTracker:
             is_worker = cls_id in self.detector.worker_class_ids or raw_name.lower() in {"person", "worker"}
             display_name = "Worker" if is_worker else raw_name
 
+            # Intelligent verification filter for PPE in tracker
+            if self.detector.is_custom_model and frame is not None and frame.size > 0:
+                x1_c = max(0, int(coord[0]))
+                y1_c = max(0, int(coord[1]))
+                x2_c = min(frame.shape[1], int(coord[2]))
+                y2_c = min(frame.shape[0], int(coord[3]))
+                if (x2_c - x1_c) >= 15 and (y2_c - y1_c) >= 15:
+                    crop = frame[y1_c:y2_c, x1_c:x2_c]
+                    if display_name.lower() in ["glove", "gloves"]:
+                        crop_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+                        sobel_x = float(np.mean(np.abs(cv2.Sobel(crop_gray, cv2.CV_64F, 1, 0, ksize=3))))
+                        sobel_y = float(np.mean(np.abs(cv2.Sobel(crop_gray, cv2.CV_64F, 0, 1, ksize=3))))
+                        if (sobel_x > 48.0 and sobel_y > 48.0) or conf < 0.45:
+                            display_name = "none"
+                            cls_id = 5
+                    elif display_name.lower() in ["boot", "boots"] and conf < 0.35:
+                        display_name = "none"
+                        cls_id = 5
+
+            if display_name.lower() == "none":
+                continue
+
             if is_worker:
                 self.unique_worker_ids.add(track_id)
                 if track_id not in self.worker_tracks:

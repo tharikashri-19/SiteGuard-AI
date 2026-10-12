@@ -349,49 +349,144 @@ The evaluation script extracts and logs actual validation metrics to `models/ppe
 
 ---
 
+## 14. Worker Ergonomics & XGBoost Risk Prediction Module
+
+SiteGuard AI now includes a complete, multi-stage **Worker Ergonomics & Safety Risk Prediction Module**.
+
+### Architectural Pipeline
+```text
++---------------------------------------------------------------------------------+
+|                                INPUT IMAGE / VIDEO                              |
++---------------------------------------------------------------------------------+
+                                         |
+                                         v
++---------------------------------------------------------------------------------+
+|                         STAGE 1: YOLOv8 POSE ESTIMATION                         |
+|   Extracts 17 COCO body keypoints (models/yolov8n-pose.pt) with joint confidences|
++---------------------------------------------------------------------------------+
+                                         |
+                                         v
++---------------------------------------------------------------------------------+
+|                   STAGE 2: BIOMECHANICAL POSTURE CLASSIFIER                     |
+|   Estimates: Standing, Walking, Sitting, Squatting, Kneeling, Bending/Stooping, |
+|              Lying Down, Possible Fall, Unknown                                 |
+|   Uses trunk inclination, knee flexion angle, hip-height ratio, and persistence |
++---------------------------------------------------------------------------------+
+                                         |
+                                         v
++---------------------------------------------------------------------------------+
+|                     STAGE 3: TEMPORAL RISK FEATURE EXTRACTOR                    |
+|   Extracts 25 documented features: PPE compliance ratios, posture durations,    |
+|   persistent posture events (>10s), unsafe exclusion zone overlap, hazards      |
++---------------------------------------------------------------------------------+
+                                         |
+                                         v
++---------------------------------------------------------------------------------+
+|                    STAGE 4: XGBOOST MULTICLASS RISK CLASSIFIER                  |
+|   Predicts Risk Category: Low | Medium | High | Critical                        |
+|   Produces class probabilities and top contributing factor explanations (SHAP)  |
+|   Checkpoints: models/risk_xgboost.json, models/risk_feature_schema.json        |
++---------------------------------------------------------------------------------+
+```
+
+### Dataset Structure & Inspection (`risk prediction/`)
+- **Metadata File:** `risk prediction/filter_cap.json`
+- **Images Directory:** `risk prediction/images/`
+- **Total Records:** 1,700 records in JSON (100% matched to 1,700 images on disk).
+- **Inspection Findings:**
+  - JSON root: `{"annotations": [{"image_id": "...", "caption": "..."}]}`.
+  - Image IDs map 1:1 to filenames (`5001.jpg`, `5601.webp`, etc.).
+  - Contains descriptive English text captions describing workers, postures, and ergonomic observations.
+  - **No bounding boxes, no keypoints, and no discrete ground-truth risk categories (`Low`, `Medium`, `High`, `Critical`) exist in the source JSON.**
+
+### Operational Modes (Scientific Integrity Standard)
+- **Mode A (Verified Ground Truth Training):** Utilized when verified ground truth risk labels exist (e.g. reviewed by a construction safety professional).
+- **Mode B (Synthetic Reference Workflow):** Because the source dataset contains descriptive captions without discrete risk labels, Mode B trains XGBoost on an explicitly marked synthetic feature dataset (`is_synthetic = True`) to verify the end-to-end pipeline without claiming unverified real-world accuracy.
+- **Manual Annotation Template:** `risk prediction/manual_risk_annotation_template.csv` is provided for safety professionals to fill ground-truth labels.
+
+### Posture Classification Categories
+1. **Standing:** Upright torso (< 25° inclination), extended leg joints.
+2. **Walking:** Upright torso, horizontal stride separation between ankles.
+3. **Sitting:** Torso upright (< 35°), knee flexion ~80°-120°, elevated hip height.
+4. **Squatting:** Deep knee flexion (< 115°), hip lowered to knee level, feet on ground.
+5. **Kneeling:** Ground contact with at least one knee (knee-to-ankle distance near zero).
+6. **Bending or stooping:** Excessive trunk flexion (torso angle >= 35° relative to vertical).
+7. **Lying down:** Torso horizontal (>= 65° from vertical), low vertical body span.
+8. **Possible fall:** Sudden vertical descent followed by prone position in video.
+9. **Unknown:** Keypoint confidence < 0.35 or severe occlusion.
+
+### Important Distinction Between Posture and Risk
+Posture detection is an ergonomic observation, not an automatic safety violation. Bending, squatting, or kneeling during normal tradeswork is common and safe in ordinary zones. Risk escalates only when coupled with active PPE violations, prolonged static strain (>10s), exclusion zone overlap, or proximity to heavy machinery.
+
+### Exact Commands
+
+```bash
+# 1. Inspect the dataset and generate reports
+python "risk prediction/inspect_dataset.py"
+
+# 2. Train the XGBoost risk model
+python -m src.train_risk_model
+
+# 3. Evaluate posture and risk models
+python -m src.evaluate_risk
+
+# 4. Run headless integration test
+python test_risk_pipeline.py
+
+# 5. Launch the Streamlit dashboard
+streamlit run app.py
+```
+
+---
+
 ## Project Structure
 
 ```text
 f:/ML PROJECT/
 │
-├── app.py                      # Main Streamlit Dashboard Application
+├── app.py                      # Main Streamlit Dashboard (Video, PPE, Risk, Dataset Tabs)
 │
-├── construction-ppe/           # Construction PPE Dataset
-│   ├── data.yaml               # Dataset configuration (11 classes)
-│   ├── images/                 # train/ (1,132), val/ (143), test/ (141)
-│   └── labels/                 # train/, val/, test/ annotations
+├── risk prediction/            # Ergonomic Risk Dataset & Reports
+│   ├── filter_cap.json         # Raw image metadata and descriptive captions (1,700 items)
+│   ├── images/                 # All 1,700 extracted dataset images
+│   ├── dataset_metadata.csv    # Extracted CSV mapping image paths and keywords
+│   ├── dataset_inspection_report.md # Structural report and limitations analysis
+│   ├── manual_risk_annotation_template.csv # Documented CSV template for expert review
+│   ├── synthetic_risk_dataset.csv # Clearly marked synthetic reference dataset
+│   └── risk_evaluation_report.md # Comprehensive risk evaluation report
+│
+├── construction-ppe-v2/        # Hard-negative corrected PPE dataset (turbans & baniyans)
 │
 ├── models/
-│   ├── best.pt                 # Existing baseline model weights
-│   ├── ppe_best.pt             # Trained Custom Construction-PPE Model
-│   └── ppe_metrics.json        # Actual validation evaluation metrics
+│   ├── best.pt                 # Baseline model weights
+│   ├── ppe_best.pt             # Legacy PPE model (v1)
+│   ├── ppe_best_v2.pt          # Retrained hard-negative corrected PPE model (v2)
+│   ├── yolov8n-pose.pt         # Ultralytics YOLOv8 pose checkpoint (17 keypoints)
+│   ├── risk_xgboost.json       # Trained XGBoost multiclass risk classifier
+│   ├── risk_feature_schema.json# Formal documentation of the 25 safety features
+│   └── risk_training_metadata.json # Training metadata, hyperparameters, and metrics
 │
 ├── src/
-│   ├── __init__.py             # Module initialization
-│   ├── video_processor.py      # Video validation, metadata, & frame sampling generator
-│   ├── detector.py             # YOLO detector wrapper (CUDA/CPU, class inspection)
-│   ├── tracker.py              # ByteTrack multi-object tracker
-│   ├── data_logger.py          # Temporal data logger & statistics computation
-│   ├── visualization.py        # Frame annotation, Gantt timeline, & density plots
-│   ├── validate_dataset.py     # Dataset integrity inspector & report generator
-│   └── train_ppe.py            # YOLOv8n fine-tuning & evaluation script
+│   ├── pose_estimator.py       # Biomechanical pose estimation & posture heuristics
+│   ├── risk_feature_extractor.py# 25-feature safety extraction & hazard zone computation
+│   ├── risk_classifier.py      # XGBoost inference, explanation, and event management
+│   ├── train_risk_model.py     # Multiclass training pipeline (Mode A & Mode B)
+│   ├── evaluate_risk.py        # Independent evaluation & reporting script
+│   ├── generate_synthetic_risk_data.py # Synthetic reference data generator
+│   ├── detector.py             # PPE object detector
+│   ├── tracker.py              # ByteTrack temporal tracking
+│   ├── video_processor.py      # Video validation and frame sampling generator
+│   └── visualization.py        # Visualization helpers
 │
 ├── outputs/
-│   ├── detections.csv          # Structured temporal detection dataset
-│   └── annotated_video.mp4     # Playable H.264 annotated output video
+│   ├── evidence_frames/        # Timestamped frames captured during High/Critical events
+│   ├── detections.csv          # Temporal detection logs
+│   └── annotated_video.mp4     # Playable output video
 │
-├── runs/
-│   └── ppe_training/           # Training logs, loss curves, confusion matrix
-│
-├── sample_data/
-│   ├── construction_site.jpg   # High-resolution construction scene
-│   ├── create_sample_video.py  # Script to generate sample surveillance video
-│   └── construction_sample.mp4 # Pre-packaged 6.0s 25 FPS demo video
-│
-├── temp/                       # Temporary frame & stream storage
-├── test_pipeline.py            # Automated headless end-to-end integration test
-├── requirements.txt            # Python dependencies
-└── README.md                   # Project documentation
+├── test_risk_pipeline.py       # Headless integration test for risk prediction module
+├── test_pipeline.py            # Headless integration test for PPE pipeline
+├── requirements.txt            # Python dependencies (includes xgboost & scikit-learn)
+└── README.md                   # Comprehensive project documentation
 ```
 
 ---
