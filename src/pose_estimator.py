@@ -230,23 +230,27 @@ class WorkerPoseEstimator:
         knee_y_list = []
         ank_y_list = []
 
+        has_leg_kpts = False
         if hip_l.confidence > self.keypoint_conf_thresh and knee_l.confidence > self.keypoint_conf_thresh and ank_l.confidence > self.keypoint_conf_thresh:
             angle_l = calculate_angle_3pts((hip_l.x, hip_l.y), (knee_l.x, knee_l.y), (ank_l.x, ank_l.y))
             knee_angles.append(angle_l)
             knee_y_list.append(knee_l.y)
             ank_y_list.append(ank_l.y)
+            has_leg_kpts = True
 
         if hip_r.confidence > self.keypoint_conf_thresh and knee_r.confidence > self.keypoint_conf_thresh and ank_r.confidence > self.keypoint_conf_thresh:
             angle_r = calculate_angle_3pts((hip_r.x, hip_r.y), (knee_r.x, knee_r.y), (ank_r.x, ank_r.y))
             knee_angles.append(angle_r)
             knee_y_list.append(knee_r.y)
             ank_y_list.append(ank_r.y)
+            has_leg_kpts = True
 
-        avg_knee_angle = float(np.mean(knee_angles)) if knee_angles else 170.0
+        avg_knee_angle = float(np.mean(knee_angles)) if knee_angles else None
         
         # Relative hip height in bounding box (0 = top of bbox, 1 = bottom of bbox)
         hip_height_ratio = float((mid_hip[1] - y1) / bbox_h)
         hip_height_ratio = np.clip(hip_height_ratio, 0.0, 1.0)
+        lower_body_extent = (y2 - mid_hip[1]) / torso_len
 
         # Hip to knee vertical delta
         avg_knee_y = float(np.mean(knee_y_list)) if knee_y_list else (mid_hip[1] + torso_len)
@@ -256,7 +260,7 @@ class WorkerPoseEstimator:
 
         angles_summary = {
             "torso_angle": torso_angle,
-            "knee_angle": avg_knee_angle,
+            "knee_angle": avg_knee_angle if avg_knee_angle is not None else 170.0,
             "aspect_ratio": aspect_ratio,
             "hip_height_ratio": hip_height_ratio,
         }
@@ -279,37 +283,40 @@ class WorkerPoseEstimator:
                     if y_diff > bbox_h * 0.4:
                         is_fall = True
             if is_fall:
-                return "Possible fall", 0.85, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
-            return "Lying down", 0.80, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
+                return "Possible fall", 0.85, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
+            return "Lying down", 0.80, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
 
-        # 2. Suspended / Hanging (Hands overhead gripping edge/bar, body suspended/dangling without ground support)
-        # Requires wrists overhead AND (dangling bent legs or airborne feet off ground)
+        # 2. Suspended / Hanging / Climbing on Edge (Hands overhead gripping edge/bar, body suspended without ground support)
         if wrists_overhead:
-            if avg_knee_angle < 135.0: # dangling or tucked legs (e.g., cliff / ledge hanger)
+            # A: Dangling bent legs (e.g., cliff / ledge hanger with visible tucked/dangling legs)
+            if avg_knee_angle is not None and avg_knee_angle < 135.0:
                 return "Suspended / hanging", 0.94, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
-            elif avg_ank_y < y2 - 0.15 * bbox_h and min(wrist_l.y, wrist_r.y) < nose.y:
-                # Full dead hang with straight legs suspended in mid-air
-                return "Suspended / hanging", 0.94, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
+            # B: Hips at bottom of bounding box (legs dangling below or out of frame, body suspended from hands)
+            if hip_height_ratio > 0.70 or lower_body_extent < 0.60:
+                return "Suspended / hanging", 0.94, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
+            # C: Full dead hang with straight airborne legs (feet elevated off ground)
+            if has_leg_kpts and avg_ank_y < y2 - 0.15 * bbox_h and min(wrist_l.y, wrist_r.y) < nose.y:
+                return "Suspended / hanging", 0.94, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
 
         # 3. Squatting: hips lowered close to knees, deep knee flexion (< 115 deg), feet on ground
-        if avg_knee_angle < 115.0 and (hip_to_knee_v < 0.35 * torso_len or hip_height_ratio > 0.58):
+        if avg_knee_angle is not None and avg_knee_angle < 115.0 and (hip_to_knee_v < 0.35 * torso_len or hip_height_ratio > 0.58):
             return "Squatting", 0.82, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
 
         # 4. Kneeling: at least one knee is near ground/ankle level while hips are elevated
         if knee_y_list and ank_y_list:
             min_knee_ank_dist = min(abs(ky - ay) for ky, ay in zip(knee_y_list, ank_y_list))
             if min_knee_ank_dist < 0.25 * torso_len and mid_hip[1] < avg_knee_y - 0.2 * torso_len:
-                return "Kneeling", 0.78, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
+                return "Kneeling", 0.78, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
 
         # 5. Sitting: torso upright (< 35 deg), knee bent ~ 75-125 deg, hip height elevated above ankles, feet not suspended by hands
-        if torso_angle < 35.0 and 70.0 <= avg_knee_angle <= 130.0 and hip_height_ratio > 0.45 and not wrists_overhead:
+        if avg_knee_angle is not None and torso_angle < 35.0 and 70.0 <= avg_knee_angle <= 130.0 and hip_height_ratio > 0.45 and not wrists_overhead:
             if avg_knee_y < avg_ank_y - 0.15 * torso_len:
                 return "Sitting", 0.76, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
 
         # 6. Bending or stooping: significant trunk lean (>= 35 deg), legs relatively extended
         if torso_angle >= 35.0:
             conf = min(0.92, 0.65 + (torso_angle / 90.0) * 0.25)
-            return "Bending or stooping", conf, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
+            return "Bending or stooping", conf, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
 
         # 7. Standing vs Walking:
         # If leg angle is straight and torso is upright
@@ -318,10 +325,13 @@ class WorkerPoseEstimator:
             if ank_l.confidence > self.keypoint_conf_thresh and ank_r.confidence > self.keypoint_conf_thresh:
                 ankle_spread = abs(ank_l.x - ank_r.x)
                 if ankle_spread > 0.45 * torso_len:
-                    return "Walking", 0.75, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
-            return "Standing", 0.88, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
+                    return "Walking", 0.75, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
+            # If wrists are overhead and body lacks ground leg support, cannot be standing
+            if wrists_overhead and (hip_height_ratio > 0.65 or lower_body_extent < 0.70):
+                return "Suspended / hanging", 0.94, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
+            return "Standing", 0.88, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
 
-        return "Unknown", 0.50, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
+        return "Unknown", 0.50, torso_angle, avg_knee_angle or 170.0, hip_height_ratio, angles_summary
 
     def estimate_frame(
         self,
