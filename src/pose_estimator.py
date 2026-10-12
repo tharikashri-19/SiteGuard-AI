@@ -261,20 +261,11 @@ class WorkerPoseEstimator:
             "hip_height_ratio": hip_height_ratio,
         }
 
-        # 0. Suspended / Hanging / Edge Clinging (Hands/wrists gripping edge/overhead, body suspended below in midair)
+        # 0. Wrists strictly overhead / gripping above shoulders
         wrists_overhead = (
-            (wrist_l.confidence > self.keypoint_conf_thresh and wrist_l.y <= sh_l.y + 0.15 * torso_len) or
-            (wrist_r.confidence > self.keypoint_conf_thresh and wrist_r.y <= sh_r.y + 0.15 * torso_len)
+            (wrist_l.confidence > self.keypoint_conf_thresh and wrist_l.y < sh_l.y) or
+            (wrist_r.confidence > self.keypoint_conf_thresh and wrist_r.y < sh_r.y)
         )
-        wrists_gripping_edge = (
-            wrists_overhead or
-            (wrist_l.confidence > 0.25 and wrist_l.y <= mid_sh[1] + 0.25 * torso_len) or
-            (wrist_r.confidence > 0.25 and wrist_r.y <= mid_sh[1] + 0.25 * torso_len) or
-            (nose.confidence > 0.25 and ((wrist_l.confidence > 0.25 and wrist_l.y <= nose.y + 0.35 * torso_len) or (wrist_r.confidence > 0.25 and wrist_r.y <= nose.y + 0.35 * torso_len)))
-        )
-        body_suspended = (mid_hip[1] > mid_sh[1] + 0.35 * torso_len) and (avg_ank_y > mid_hip[1])
-        if (wrists_overhead or wrists_gripping_edge) and body_suspended:
-            return "Suspended / hanging", 0.94, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
 
         # 1. Lying Down / Fall checks
         if torso_angle > 65.0 and aspect_ratio > 1.15:
@@ -291,27 +282,36 @@ class WorkerPoseEstimator:
                 return "Possible fall", 0.85, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
             return "Lying down", 0.80, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
 
-        # 2. Squatting: hips lowered close to knees, deep knee flexion (< 115 deg), feet on ground
+        # 2. Suspended / Hanging (Hands overhead gripping edge/bar, body suspended/dangling without ground support)
+        # Requires wrists overhead AND (dangling bent legs or airborne feet off ground)
+        if wrists_overhead:
+            if avg_knee_angle < 135.0: # dangling or tucked legs (e.g., cliff / ledge hanger)
+                return "Suspended / hanging", 0.94, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
+            elif avg_ank_y < y2 - 0.15 * bbox_h and min(wrist_l.y, wrist_r.y) < nose.y:
+                # Full dead hang with straight legs suspended in mid-air
+                return "Suspended / hanging", 0.94, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
+
+        # 3. Squatting: hips lowered close to knees, deep knee flexion (< 115 deg), feet on ground
         if avg_knee_angle < 115.0 and (hip_to_knee_v < 0.35 * torso_len or hip_height_ratio > 0.58):
             return "Squatting", 0.82, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
 
-        # 3. Kneeling: at least one knee is near ground/ankle level while hips are elevated
+        # 4. Kneeling: at least one knee is near ground/ankle level while hips are elevated
         if knee_y_list and ank_y_list:
             min_knee_ank_dist = min(abs(ky - ay) for ky, ay in zip(knee_y_list, ank_y_list))
             if min_knee_ank_dist < 0.25 * torso_len and mid_hip[1] < avg_knee_y - 0.2 * torso_len:
                 return "Kneeling", 0.78, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
 
-        # 4. Sitting: torso upright (< 35 deg), knee bent ~ 75-125 deg, hip height elevated above ankles, feet not suspended by hands
-        if torso_angle < 35.0 and 70.0 <= avg_knee_angle <= 130.0 and hip_height_ratio > 0.45 and not wrists_gripping_edge:
+        # 5. Sitting: torso upright (< 35 deg), knee bent ~ 75-125 deg, hip height elevated above ankles, feet not suspended by hands
+        if torso_angle < 35.0 and 70.0 <= avg_knee_angle <= 130.0 and hip_height_ratio > 0.45 and not wrists_overhead:
             if avg_knee_y < avg_ank_y - 0.15 * torso_len:
                 return "Sitting", 0.76, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
 
-        # 5. Bending or stooping: significant trunk lean (>= 35 deg), legs relatively extended
+        # 6. Bending or stooping: significant trunk lean (>= 35 deg), legs relatively extended
         if torso_angle >= 35.0:
             conf = min(0.92, 0.65 + (torso_angle / 90.0) * 0.25)
             return "Bending or stooping", conf, torso_angle, avg_knee_angle, hip_height_ratio, angles_summary
 
-        # 6. Standing vs Walking:
+        # 7. Standing vs Walking:
         # If leg angle is straight and torso is upright
         if torso_angle < 35.0:
             # Check horizontal stride distance between ankles

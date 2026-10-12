@@ -99,6 +99,15 @@ class VideoProcessor:
         if fps <= 0 or np.isnan(fps):
             fps = 25.0  # Fallback default if stream header omits FPS
 
+        # Cap max processing resolution to 1280px to prevent OutOfMemoryError on 4K/UHD video streams
+        proc_width = width
+        proc_height = height
+        max_dim = 1280
+        if max(width, height) > max_dim:
+            scale = max_dim / float(max(width, height))
+            proc_width = int(round(width * scale / 2.0) * 2)
+            proc_height = int(round(height * scale / 2.0) * 2)
+
         duration_seconds = total_frames / fps
 
         metadata = VideoMetadata(
@@ -108,14 +117,14 @@ class VideoProcessor:
             duration_seconds=duration_seconds,
             fps=fps,
             total_frames=total_frames,
-            width=width,
-            height=height,
-            resolution=f"{width} x {height}",
+            width=proc_width,
+            height=proc_height,
+            resolution=f"{width} x {height}" if (proc_width == width) else f"{width}x{height} (scaled to {proc_width}x{proc_height})",
         )
         return True, "Video is valid and ready for processing.", metadata
 
     def extract_sampled_frames(
-        self, video_path: str, target_fps: float = 5.0
+        self, video_path: str, target_fps: float = 5.0, max_dim: int = 1280
     ) -> Generator[Tuple[int, float, np.ndarray], None, None]:
         """
         Sequentially streams sampled frames from the video file.
@@ -127,6 +136,7 @@ class VideoProcessor:
         Args:
             video_path: Absolute or relative path to video.
             target_fps: Frame extraction rate (e.g. 5.0 FPS or 10.0 FPS).
+            max_dim: Max dimension to downscale ultra-high resolution frames.
         """
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -152,6 +162,11 @@ class VideoProcessor:
                 # Sample frames at calculated step
                 if frame_idx % sample_step == 0:
                     current_time_sec = frame_idx / source_fps
+                    if max_dim is not None and max(frame.shape[0], frame.shape[1]) > max_dim:
+                        scale = float(max_dim) / float(max(frame.shape[0], frame.shape[1]))
+                        new_w = int(round(frame.shape[1] * scale / 2.0) * 2)
+                        new_h = int(round(frame.shape[0] * scale / 2.0) * 2)
+                        frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
                     yield (frame_idx, current_time_sec, frame)
 
                 frame_idx += 1
