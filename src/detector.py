@@ -208,17 +208,13 @@ class YOLOConstructionDetector:
                     hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
                     h_c, s_c, v_c = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
 
-                    # 1. Helmet False-Positive Check (Turbans, cloth wraps, gamchas, head towels)
+                    # 1. Helmet False-Positive Check (Hot-pink cloth turbans)
                     if display_name.lower() in ["helmet", "hardhat"]:
-                        # Pink / magenta cloth wrap (H: 135-178, S >= 40)
-                        pink_mask = (h_c >= 135) & (h_c <= 178) & (s_c >= 40)
+                        # Pink / magenta cloth wrap (H: 135-178, S >= 50) - non-standard cloth
+                        pink_mask = (h_c >= 135) & (h_c <= 178) & (s_c >= 50)
                         pink_ratio = float(np.sum(pink_mask)) / max(1, pink_mask.size)
 
-                        # Deep red / saffron folded textured cloth without rigid shell gloss
-                        red_cloth_mask = ((h_c <= 12) | (h_c >= 170)) & (s_c >= 120) & (v_c <= 200)
-                        red_cloth_ratio = float(np.sum(red_cloth_mask)) / max(1, red_cloth_mask.size)
-
-                        if pink_ratio > 0.05 or red_cloth_ratio > 0.30:
+                        if pink_ratio > 0.25:
                             # Reclassify from false helmet to no_helmet
                             display_name = "no_helmet"
                             cls_id = 7
